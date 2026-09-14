@@ -1,0 +1,2 @@
+icalendar>=6.1,<7
+recurring-ical-events>=3.3,<4

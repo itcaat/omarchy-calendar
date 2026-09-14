@@ -1,5 +1,5 @@
 [Unit]
-Description=Sync Google Calendar into the Omarchy calendar widget
+Description=Sync calendars into the Omarchy calendar widget
 After=network-online.target
 Wants=network-online.target
 

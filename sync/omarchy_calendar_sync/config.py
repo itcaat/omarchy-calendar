@@ -6,12 +6,16 @@ with no file at all.
 
 import copy
 import json
+import re
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 
 CONFIG_PATH = Path.home() / ".config" / "omarchy" / "calendar-sync.json"
 
 DEFAULTS = {
+    "source": "google",
+    "ical": {"feeds": []},
     "profile": str(Path.home() / ".config" / "gws-omarchy-calendar"),
     # Resolved to an absolute path by sync/setup. A systemd user service
     # does not inherit an interactive shell PATH, so relying on the bare
@@ -43,6 +47,8 @@ def load(path=None):
 
     merged = _merge(copy.deepcopy(DEFAULTS), raw)
 
+    validate_source(merged)
+
     _validate_calendars(merged.get("calendars"))
 
     window = merged.get("window")
@@ -53,6 +59,41 @@ def load(path=None):
         )
 
     return merged
+
+
+def validate_source(config):
+    if config.get("source") not in ("google", "ical"):
+        raise ConfigError("source must be google or ical")
+    if config["source"] != "ical":
+        return
+    settings = config.get("ical")
+    feeds = settings.get("feeds") if isinstance(settings, dict) else None
+    if not isinstance(feeds, list) or not feeds:
+        raise ConfigError("ical.feeds must be a non-empty list")
+    ids = set()
+    for index, feed in enumerate(feeds, 1):
+        label = f"iCal feed {index}"
+        if not isinstance(feed, dict):
+            raise ConfigError(f"{label} must be an object")
+        for key in ("id", "name", "url"):
+            if not isinstance(feed.get(key), str) or not feed[key].strip():
+                raise ConfigError(f"{label} requires {key}")
+        try:
+            url = urlsplit(feed["url"])
+            valid = (url.scheme in ("https", "webcal") and url.hostname
+                     and not url.username and not url.password and not url.fragment)
+            valid = valid and not any(c.isspace() for c in feed["url"])
+            url.port
+        except ValueError:
+            valid = False
+        if not valid:
+            raise ConfigError(f"{label} requires an HTTPS or webcal URL without credentials")
+        if feed["id"] in ids:
+            raise ConfigError("iCal feed ids must be unique")
+        ids.add(feed["id"])
+        color = feed.get("color", "#4285f4")
+        if not isinstance(color, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+            raise ConfigError(f"{label} color must be #RRGGBB")
 
 
 def _merge(defaults, override):

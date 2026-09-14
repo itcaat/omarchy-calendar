@@ -3,8 +3,10 @@
 **Your Google Calendar, in your Omarchy bar.** A month view with your real
 events on it, and a bar that tells you what is coming before it starts.
 
-Not a Google user? It reads a plain JSON file, so khal, vdirsyncer, Nextcloud
-or an ICS feed work just as well. See [Use another source](#use-another-source).
+iCal subscription links work without Google OAuth; see
+[Connect with an iCal link](#connect-with-an-ical-link-no-google-oauth).
+It also reads a plain JSON file, so khal, vdirsyncer or other producers work
+just as well. See [Use another source](#use-another-source).
 
 ![Preview](preview.png)
 
@@ -68,9 +70,69 @@ omarchy restart shell
 ```
 
 **Installing is not the whole job.** At this point you have a working clock and
-an empty calendar, because nothing is feeding it yet. Connect Google Calendar
-below, or point any other source at the file. The widget says as much when you
+an empty calendar, because nothing is feeding it yet. Connect an iCal link or
+Google Calendar below, or point any other source at the file. The widget says as much when you
 open it, with the command to run.
+
+## Connect with an iCal Link (No Google OAuth)
+
+For read-only calendars, subscribe with an HTTPS or `webcal://` iCalendar link:
+
+```bash
+~/.config/omarchy/plugins/tmn73.calendar/sync/setup --ical
+```
+
+In Google Calendar, open **Settings > your calendar > Integrate calendar >
+Secret address in iCal format**. Copy that address, not the public address.
+Your calendar does not need to be public. Workspace administrators may disable
+secret addresses. Other providers' iCalendar subscription links work too.
+
+The terminal wizard asks for each link, name and color. A random color is
+suggested from a palette, avoiding colors already used until the palette is
+exhausted. Press Enter to accept it or type your own `#RRGGBB` color. The chosen
+color is saved and stays the same across syncs. Enter an empty link to
+finish. It installs the iCal dependencies in a dedicated Python virtual
+environment, verifies the first sync and enables the five-minute timer.
+Python with `venv`/`ensurepip` support is required; `gws`, `gcloud` and OAuth
+credentials are not. Running the wizard again keeps existing subscriptions
+and lets you add more.
+
+Private links grant access to calendar contents. Input is hidden and the
+configuration file is saved with mode `600`. Links are not written to the
+widget's events file or error messages.
+
+To rename, recolor or remove subscriptions, edit
+`~/.config/omarchy/calendar-sync.json`:
+
+```json
+{
+  "source": "ical",
+  "ical": {
+    "feeds": [
+      {
+        "id": "personal",
+        "name": "Personal",
+        "color": "#4285f4",
+        "url": "https://example.com/private-calendar.ics"
+      }
+    ]
+  },
+  "calendars": { "include": [], "exclude": [] },
+  "window": { "pastDays": 7, "futureDays": 60 }
+}
+```
+
+Keep each feed's `id` unique and stable. Changes apply on the next sync.
+To refresh immediately, run `systemctl --user start omarchy-calendar-sync.service`.
+Recurring events, exceptions, timezones and all-day events are supported.
+Floating times use `X-WR-TIMEZONE` when present, otherwise the desktop timezone.
+An invalid or unavailable feed leaves the previous events file intact.
+Provider caching can delay updates beyond the polling interval.
+
+Event links use the feed's `URL`; meeting links use `X-GOOGLE-CONFERENCE` when
+present. Google-specific working-location and personal invitation-response
+metadata are not mapped from iCal. The selected source is either iCal or the
+Google API, not both. Run setup without `--ical` to switch back to Google.
 
 ## Sync your Google Calendar
 
@@ -237,6 +299,11 @@ Your Google credentials live in the `gws` profile directory and are not touched
 by any of this. Delete that directory to revoke locally, and remove the project
 from your Google Cloud console to revoke properly.
 
+For iCal, subscriptions remain in `~/.config/omarchy/calendar-sync.json` and
+the Python environment remains in `${XDG_DATA_HOME:-~/.local/share}/omarchy-calendar/venv`.
+Remove these separately when no longer needed. Reset a private subscription
+link in your calendar provider's settings to revoke access through that link.
+
 ## Development
 
 ```bash
@@ -244,9 +311,15 @@ cd sync && PYTHONPATH=. python3 -m unittest discover -s ../tests -t .. -v
 node --test tests/model.test.js
 ```
 
-No dependencies, no dev dependencies. The Python sync is standard library only
-and the QML logic lives in `Model.js`, which loads under Node precisely so it
-can be tested.
+The Google sync uses only the Python standard library. For iCal and its tests:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r sync/requirements-ical.txt
+PYTHONPATH=sync .venv/bin/python -m unittest discover -s tests -t . -v
+```
+
+The QML logic lives in `Model.js`, which loads under Node for testing.
 
 `Panel.qml` and `BarWidget.qml` are not unit tested. Quickshell widgets need a
 live shell to render, and building that harness would cost more than it catches.

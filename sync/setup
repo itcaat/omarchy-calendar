@@ -9,6 +9,10 @@
 
 set -euo pipefail
 
+if [[ "${1:-}" == "--ical" ]]; then
+  exec bash "$(dirname "${BASH_SOURCE[0]}")/setup-ical"
+fi
+
 # Deliberately empty by default. Google Cloud project ids are unique across
 # all of Google, not per account, so a hardcoded default works for exactly one
 # person on earth and fails for everyone after them. Resolved below, once we
@@ -250,6 +254,7 @@ if path.exists():
     except ValueError:
         config = {}
 config["gwsPath"] = gws_path
+config["source"] = "google"
 config["profile"] = profile
 path.write_text(json.dumps(config, indent=2) + "\n")
 print("  gwsPath set to", gws_path)

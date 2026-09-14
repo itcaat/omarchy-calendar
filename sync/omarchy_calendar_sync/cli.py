@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from . import config as config_module
 from . import contract, normalize
 from .gws import Gws, GwsError
+from .ical import Ical, IcalError
 
 EXIT_OK = 0
 EXIT_SYNC_FAILED = 1
@@ -141,7 +142,12 @@ def run(client, cfg, now, out_path, local_tz):
             fresh = _drop_duplicates(raw, seen)
             rows.extend(normalize.normalize_all(fresh, calendar, local_tz))
 
-        source = "gws/" + ".".join(str(part) for part in client.version())
+        source = getattr(client, "source", None)
+        if source is None:
+            source = "gws/" + ".".join(str(part) for part in client.version())
+    except IcalError as error:
+        print(f"sync failed: {error}", file=sys.stderr)
+        return EXIT_SYNC_FAILED
     except GwsError as error:
         print(f"sync failed: {error}", file=sys.stderr)
         print(
@@ -169,7 +175,7 @@ def run(client, cfg, now, out_path, local_tz):
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="omarchy-calendar-sync",
-        description="Sync Google Calendar into the Omarchy calendar widget file.",
+        description="Sync Google Calendar or iCal feeds into the calendar widget file.",
     )
     parser.add_argument("--config", default=None, help="path to calendar-sync.json")
     parser.add_argument("--out", default=None, help="path to the contract file")
@@ -185,7 +191,9 @@ def main(argv=None):
     now = datetime.now(timezone.utc)
     local_tz = resolve_local_timezone()
 
-    return run(Gws(cfg["profile"], binary=cfg["gwsPath"]), cfg, now, out_path, local_tz)
+    client = (Ical(cfg["ical"]["feeds"], local_tz) if cfg["source"] == "ical"
+              else Gws(cfg["profile"], binary=cfg["gwsPath"]))
+    return run(client, cfg, now, out_path, local_tz)
 
 
 if __name__ == "__main__":
