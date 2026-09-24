@@ -297,6 +297,13 @@ function eventsForDateKey(index, dateKey) {
 // the widget needs no separate calendar list and no configuration file: it
 // can only ever offer you calendars you actually have events in.
 function calendarsInDocument(doc) {
+  if (doc && Array.isArray(doc.calendars)) {
+    return doc.calendars.slice().filter(function(calendar) {
+      return calendar && calendar.id
+    }).sort(function(a, b) {
+      return String(a.name || a.id).localeCompare(String(b.name || b.id))
+    })
+  }
   var events = (doc && doc.events) || []
   var byId = {}
   var ordered = []
@@ -365,17 +372,6 @@ function safeUrl(url) {
   var text = String(url || "").trim()
   if (text.indexOf("https://") !== 0) return ""
   if (/[\s"'<>]/.test(text)) return ""
-  return text
-}
-
-// Turn the QML file URL of a bundled script into something a person can paste.
-// Derived rather than hardcoded: `omarchy plugin add` uses the manifest id, but
-// a hand-cloned checkout can live anywhere, and a wrong path in the one message
-// a new user sees is worse than no message.
-function commandPathFromUrl(fileUrl, home) {
-  var text = String(fileUrl || "")
-  if (text.indexOf("file://") === 0) text = text.substring(7)
-  if (home && text.indexOf(home + "/") === 0) text = "~" + text.substring(home.length)
   return text
 }
 
@@ -605,7 +601,6 @@ if (typeof module !== "undefined") {
     isDeclined: isDeclined,
     isOutOfOffice: isOutOfOffice,
     safeUrl: safeUrl,
-    commandPathFromUrl: commandPathFromUrl,
     meetingUrlFor: meetingUrlFor,
     eventUrlFor: eventUrlFor,
     isJoinableNow: isJoinableNow,

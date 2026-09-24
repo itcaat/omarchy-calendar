@@ -27,7 +27,6 @@ class TestLoad(unittest.TestCase):
             self.assertEqual(
                 loaded["window"]["pastDays"], config.DEFAULTS["window"]["pastDays"]
             )
-            self.assertEqual(loaded["calendars"], config.DEFAULTS["calendars"])
 
     def test_malformed_json_raises(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -38,15 +37,11 @@ class TestLoad(unittest.TestCase):
 
     def test_defaults_are_not_mutated_by_a_returned_config(self):
         loaded = config.load(Path("/nonexistent/calendar-sync.json"))
-        loaded["calendars"]["include"].append("leaked@example.com")
-        self.assertEqual(config.DEFAULTS["calendars"]["include"], [])
-
-    def test_null_calendars_and_window_keys_fill_with_defaults(self):
+    def test_null_window_keys_fill_with_defaults(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "c.json"
-            path.write_text(json.dumps({"calendars": None, "window": None}))
+            path.write_text(json.dumps({"window": None}))
             loaded = config.load(path)
-            self.assertEqual(loaded["calendars"], config.DEFAULTS["calendars"])
             self.assertEqual(loaded["window"], config.DEFAULTS["window"])
 
     def test_null_past_days_raises_config_error_naming_the_key(self):
@@ -65,44 +60,6 @@ class TestLoad(unittest.TestCase):
                 config.load(path)
             self.assertIn("futureDays", str(ctx.exception))
 
-    def test_include_as_a_string_raises_config_error_naming_the_key(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "c.json"
-            path.write_text(json.dumps({"calendars": {"include": "Personal"}}))
-            with self.assertRaises(config.ConfigError) as ctx:
-                config.load(path)
-            self.assertIn("include", str(ctx.exception))
-
-
-class TestSelectCalendars(unittest.TestCase):
-    def test_empty_include_selects_all(self):
-        selected = config.select_calendars(CALENDARS, config.DEFAULTS)
-        self.assertEqual(len(selected), 3)
-
-    def test_include_by_name(self):
-        cfg = {"calendars": {"include": ["Personal"], "exclude": []}}
-        selected = config.select_calendars(CALENDARS, cfg)
-        self.assertEqual([c["name"] for c in selected], ["Personal"])
-
-    def test_include_by_id(self):
-        cfg = {"calendars": {"include": ["c@example.com"], "exclude": []}}
-        selected = config.select_calendars(CALENDARS, cfg)
-        self.assertEqual([c["name"] for c in selected], ["Destify"])
-
-    def test_exclude_removes_from_all(self):
-        cfg = {"calendars": {"include": [], "exclude": ["Phases of the Moon"]}}
-        selected = config.select_calendars(CALENDARS, cfg)
-        self.assertEqual([c["name"] for c in selected], ["Personal", "Destify"])
-
-    def test_exclude_beats_include(self):
-        cfg = {"calendars": {"include": ["Personal"], "exclude": ["Personal"]}}
-        self.assertEqual(config.select_calendars(CALENDARS, cfg), [])
-
-    def test_unknown_name_selects_nothing_rather_than_everything(self):
-        cfg = {"calendars": {"include": ["Typo"], "exclude": []}}
-        self.assertEqual(config.select_calendars(CALENDARS, cfg), [])
-
-
 class TestWindowBounds(unittest.TestCase):
     def test_bounds_bracket_now(self):
         now = datetime(2026, 8, 10, 12, 0, tzinfo=timezone.utc)
@@ -120,14 +77,3 @@ class TestWindowBounds(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class TestGwsPath(unittest.TestCase):
-    def test_defaults_to_the_bare_name(self):
-        self.assertEqual(config.DEFAULTS["gwsPath"], "gws")
-
-    def test_an_absolute_path_is_kept(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "c.json"
-            path.write_text(json.dumps({"gwsPath": "/opt/bin/gws"}))
-            self.assertEqual(config.load(path)["gwsPath"], "/opt/bin/gws")

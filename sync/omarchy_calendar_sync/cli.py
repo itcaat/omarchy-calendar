@@ -1,4 +1,4 @@
-"""Entry point. Orchestrates config, gws, normalization, and the write."""
+"""Entry point for the iCal sync and the event-file write."""
 
 import argparse
 import json
@@ -11,7 +11,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from . import config as config_module
 from . import contract, normalize
-from .gws import Gws, GwsError
 from .ical import Ical, IcalError
 
 EXIT_OK = 0
@@ -132,7 +131,7 @@ def run(client, cfg, now, out_path, local_tz):
     """Fetch, normalize, write. Returns a process exit code."""
     try:
         client.check()
-        calendars = config_module.select_calendars(client.calendars(), cfg)
+        calendars = client.calendars()
         time_min, time_max = config_module.window_bounds(cfg, now)
 
         rows = []
@@ -142,24 +141,13 @@ def run(client, cfg, now, out_path, local_tz):
             fresh = _drop_duplicates(raw, seen)
             rows.extend(normalize.normalize_all(fresh, calendar, local_tz))
 
-        source = getattr(client, "source", None)
-        if source is None:
-            source = "gws/" + ".".join(str(part) for part in client.version())
+        source = client.source
     except IcalError as error:
         print(f"sync failed: {error}", file=sys.stderr)
         return EXIT_SYNC_FAILED
-    except GwsError as error:
-        print(f"sync failed: {error}", file=sys.stderr)
-        print(
-            "if this is an auth error, run: "
-            "GOOGLE_WORKSPACE_CLI_CONFIG_DIR=" + str(cfg["profile"]) + " "
-            "gws auth login --scopes https://www.googleapis.com/auth/calendar.readonly",
-            file=sys.stderr,
-        )
-        return EXIT_SYNC_FAILED
 
     rows.sort(key=lambda row: (row["dateKey"], row["start"], row["title"]))
-    doc = contract.build_document(rows, now.isoformat(), source)
+    doc = contract.build_document(rows, now.isoformat(), source, client.calendars())
 
     problems = contract.validate(doc)
     if problems:
@@ -175,7 +163,7 @@ def run(client, cfg, now, out_path, local_tz):
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="omarchy-calendar-sync",
-        description="Sync Google Calendar or iCal feeds into the calendar widget file.",
+        description="Sync iCal feeds into the calendar widget file.",
     )
     parser.add_argument("--config", default=None, help="path to calendar-sync.json")
     parser.add_argument("--out", default=None, help="path to the contract file")
@@ -191,8 +179,7 @@ def main(argv=None):
     now = datetime.now(timezone.utc)
     local_tz = resolve_local_timezone()
 
-    client = (Ical(cfg["ical"]["feeds"], local_tz) if cfg["source"] == "ical"
-              else Gws(cfg["profile"], binary=cfg["gwsPath"]))
+    client = Ical(cfg["ical"]["feeds"], local_tz)
     return run(client, cfg, now, out_path, local_tz)
 
 

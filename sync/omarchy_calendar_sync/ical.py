@@ -1,12 +1,15 @@
 """Read private iCalendar feeds without exposing their URLs in output."""
 
 import hashlib
+import re
 from datetime import datetime, timedelta
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 MAX_BYTES = 20 * 1024 * 1024
+DEFAULT_COLOR = "#4285f4"
+HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$")
 
 
 class IcalError(Exception):
@@ -42,7 +45,7 @@ def dependencies():
         import icalendar
         import recurring_ical_events
     except ImportError:
-        raise IcalError("iCal dependencies are missing; run sync/setup --ical") from None
+        raise IcalError("iCal dependencies are missing; add a calendar from the settings panel") from None
     return icalendar, recurring_ical_events
 
 
@@ -108,16 +111,49 @@ class Ical:
         self.feeds = feeds
         self.local_tz = local_tz
         self.fetch = fetch
+        self._cache = {}
+        self._names = {}
+        self._colors = {}
 
     def check(self):
         dependencies()
 
     def calendars(self):
+        icalendar, _ = dependencies()
+        for feed in self.feeds:
+            configured_name = str(feed.get("name", "")).strip()
+            configured_color = str(feed.get("color", "")).strip()
+            if configured_name and configured_color:
+                self._names[feed["id"]] = configured_name
+                self._colors[feed["id"]] = configured_color
+                continue
+            data = self.fetch(feed["url"])
+            self._cache[feed["id"]] = data
+            try:
+                calendar = icalendar.Calendar.from_ical(data)
+                name = str(calendar.get("X-WR-CALNAME") or calendar.get("NAME") or "").strip()
+                color = str(
+                    calendar.get("X-APPLE-CALENDAR-COLOR")
+                    or calendar.get("COLOR")
+                    or ""
+                ).strip()
+            except Exception:
+                name = ""
+                color = ""
+            self._names[feed["id"]] = configured_name or name or urlsplit(feed["url"]).hostname or "Calendar"
+            if configured_color:
+                self._colors[feed["id"]] = configured_color
+            elif HEX_COLOR.fullmatch(color):
+                self._colors[feed["id"]] = color[:7]
+            else:
+                self._colors[feed["id"]] = DEFAULT_COLOR
         return sorted([
-            {"id": feed["id"], "name": feed["name"], "color": feed.get("color", "#4285f4")}
+            {"id": feed["id"], "name": self._names.get(feed["id"], feed.get("name") or "Calendar"),
+             "color": feed.get("color") or self._colors.get(feed["id"], DEFAULT_COLOR)}
             for feed in self.feeds
         ], key=lambda calendar: calendar["name"])
 
     def events(self, calendar_id, time_min, time_max):
         feed = next(feed for feed in self.feeds if feed["id"] == calendar_id)
-        return parse(self.fetch(feed["url"]), time_min, time_max, self.local_tz)
+        data = self._cache.pop(calendar_id, None) or self.fetch(feed["url"])
+        return parse(data, time_min, time_max, self.local_tz)

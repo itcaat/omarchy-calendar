@@ -17,8 +17,8 @@ import "Model.js" as Model
 // anchor against.
 Panel {
   id: root
-  moduleName: "tmn73.calendar"
-  ipcTarget: "tmn73.calendar"
+  moduleName: "itcaat.calendar"
+  ipcTarget: "itcaat.calendar"
   manageIpc: false
 
   property var anchorItem: null
@@ -69,9 +69,7 @@ Panel {
   readonly property var weekdays: Model.weekdayOrder(weekStart)
   readonly property var weeks: Model.monthGrid(viewYear, viewMonth, weekStart, todayKey, eventIndex)
 
-  // ---- Events, read from whatever wrote the state file. The panel never
-  //      learns where they came from: Google, khal, an ICS feed and a shell
-  //      script all look identical from here.
+  // ---- Events, read from the iCal sync state file.
   property var eventDoc: null
   property var eventIndex: ({})
   property bool eventVersionMismatch: false
@@ -80,12 +78,7 @@ Panel {
   // to elapse before calling the file stale, so one missed run stays quiet.
   readonly property int syncIntervalSeconds: 300
 
-  // Spelled out in full because the people who need it are the ones who
-  // installed from the marketplace listing and never opened the README.
-  // Resolved from this file's own location, so it is right whether the plugin
-  // was installed by `omarchy plugin add` or cloned somewhere by hand.
-  readonly property string setupCommand: Model.commandPathFromUrl(
-    Qt.resolvedUrl("sync/setup"), Quickshell.env("HOME") || "")
+  readonly property string icalManagerPath: String(Qt.resolvedUrl("sync/manage-ical")).replace(/^file:\/\//, "")
   readonly property string syncState: eventVersionMismatch
     ? "version"
     : Model.syncState(eventDoc, Date.now(), syncIntervalSeconds)
@@ -149,7 +142,7 @@ Panel {
   // the year is gone.
   readonly property bool showYearProgress: setting("showYearProgress", false)
 
-  // Google's working-location markers arrive as all-day events and describe no
+  // Working-location markers arrive as all-day events and describe no
   // commitment, so they are out by default. Declined invitations stay in by
   // default: you probably still want to see what you said no to.
   readonly property bool showWorkingLocation: setting("showWorkingLocation", false)
@@ -192,6 +185,29 @@ Panel {
 
   function toggleHideDeclined() {
     persistSettings({ hideDeclined: !root.hideDeclined })
+  }
+
+  property bool icalManagerBusy: false
+  property string icalManagerAction: "add"
+  property string icalManagerMessage: ""
+  property var icalManagerArgs: []
+
+  function manageIcal(args) {
+    if (root.icalManagerBusy) return
+    root.icalManagerArgs = args
+    root.icalManagerMessage = ""
+    root.icalManagerBusy = true
+    icalManager.running = true
+  }
+
+  function addIcal(url, color) {
+    root.icalManagerAction = "add"
+    manageIcal([root.icalManagerPath, "--add", url, "--color", color])
+  }
+
+  function removeIcal(calendarId) {
+    root.icalManagerAction = "remove"
+    manageIcal([root.icalManagerPath, "--remove", calendarId])
   }
 
   // Qt.openUrlExternally rather than the shell helper on purpose. That helper
@@ -391,25 +407,19 @@ Panel {
     onFileChanged: reload()
   }
 
-  // Copying beats reading a long path back to yourself. Argv array rather than
-  // a shell string, so there is nothing to quote.
   Process {
-    id: setupCommandCopier
-    command: ["wl-copy", "--", root.setupCommand]
-  }
-
-  property bool setupCommandCopied: false
-
-  function copySetupCommand() {
-    setupCommandCopier.running = true
-    root.setupCommandCopied = true
-    copiedReset.restart()
-  }
-
-  Timer {
-    id: copiedReset
-    interval: 2000
-    onTriggered: root.setupCommandCopied = false
+    id: icalManager
+    command: root.icalManagerArgs
+    onRunningChanged: {
+      if (running) return
+      root.icalManagerBusy = false
+      if (icalManager.exitCode === 0) {
+        root.icalManagerMessage = qsTr("Calendar saved and refreshed.")
+        eventsFile.reload()
+      } else {
+        root.icalManagerMessage = qsTr("Could not change the calendar. Check the iCal link and sync dependencies.")
+      }
+    }
   }
 
   SystemClock {
@@ -1197,27 +1207,13 @@ Panel {
               id: emptyState
               width: parent.width
               visible: root.selectedEvents.length === 0
-              color: root.syncState === "missing" && emptyHover.hovered
-                ? Style.hoverStateColor(root.contentForeground, Color.accent)
-                : Qt.darker(root.contentForeground, 1.9)
+              color: Qt.darker(root.contentForeground, 1.9)
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.caption
               wrapMode: Text.WordWrap
 
-              HoverHandler {
-                id: emptyHover
-                enabled: root.syncState === "missing"
-                cursorShape: Qt.PointingHandCursor
-              }
-
-              TapHandler {
-                enabled: root.syncState === "missing"
-                onTapped: root.copySetupCommand()
-              }
               text: root.syncState === "missing"
-                ? (root.setupCommandCopied
-                  ? qsTr("Copied. Paste it in a terminal:\n%1").arg(root.setupCommand)
-                  : qsTr("No calendar synced yet. Click to copy, then run:\n%1").arg(root.setupCommand))
+                ? qsTr("No iCal calendars connected. Use the gear in the top right to add one.")
                 : root.syncState === "version"
                   ? qsTr("Events file was written by a newer version. Update the plugin.")
                   : root.syncState === "stale"
@@ -1247,11 +1243,10 @@ Panel {
             announceLeadMinutes: root.setting("announceLeadMinutes", 15)
 
             syncState: root.syncState
-            setupCommand: root.setupCommand
-            setupCommandCopied: root.setupCommandCopied
-            onSetupCommandCopyRequested: root.copySetupCommand()
+            icalBusy: root.icalManagerBusy
+            icalAction: root.icalManagerAction
+            icalMessage: root.icalManagerMessage
             eventCount: root.eventDoc && root.eventDoc.events ? root.eventDoc.events.length : 0
-            sourceLabel: root.eventDoc ? String(root.eventDoc.source || "") : ""
             syncedAt: root.eventDoc && root.eventDoc.syncedAt
               ? Qt.formatDateTime(new Date(root.eventDoc.syncedAt), "d MMM HH:mm")
               : ""
@@ -1262,6 +1257,8 @@ Panel {
             onHideDeclinedToggled: root.toggleHideDeclined()
             onWeekStartToggled: root.toggleWeekStart()
             onLeadMinutesPicked: function(minutes) { root.setAnnounceLeadMinutes(minutes) }
+            onIcalAddRequested: function(url, color) { root.addIcal(url, color) }
+            onIcalRemoveRequested: function(calendarId) { root.removeIcal(calendarId) }
           }
         }
       }

@@ -111,7 +111,7 @@ class TestIcal(unittest.TestCase):
             self.assertEqual(request.full_url, "https://example.com/feed")
             response.read.assert_called_once_with(ical.MAX_BYTES + 1)
 
-    def test_sync_uses_ical_without_gws_and_keeps_old_file_on_failure(self):
+    def test_sync_uses_ical_and_keeps_old_file_on_failure(self):
         data = calendar(event("UID:one\r\nDTSTART:20260310T090000Z\r\nSUMMARY:Meeting\r\n"))
         client = ical.Ical([FEED], TZ, fetch=lambda url: data)
         cfg = {**config.DEFAULTS, "source": "ical", "ical": {"feeds": [FEED]}}
@@ -132,42 +132,17 @@ class TestIcalConfig(unittest.TestCase):
         for changes in ({"url": "http://example.com/private-secret"}, {"color": None}, {"name": ""}):
             with self.subTest(changes=changes):
                 with self.assertRaises(config.ConfigError) as caught:
-                    config.validate_source({"source": "ical", "ical": {"feeds": [{**FEED, **changes}]}})
+                    config.validate_ical({"ical": {"feeds": [{**FEED, **changes}]}})
                 self.assertNotIn("private-secret", str(caught.exception))
 
     def test_duplicate_ids_are_rejected(self):
         with self.assertRaises(config.ConfigError):
-            config.validate_source({"source": "ical", "ical": {"feeds": [FEED, FEED]}})
+            config.validate_ical({"ical": {"feeds": [FEED, FEED]}})
 
     def test_main_selects_ical_without_google(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "config.json"
-            path.write_text(json.dumps({"source": "ical", "ical": {"feeds": [FEED]}}))
-            with patch.object(cli, "Gws") as google, patch.object(cli, "run", return_value=0) as run:
+            path.write_text(json.dumps({"ical": {"feeds": [FEED]}}))
+            with patch.object(cli, "run", return_value=0) as run:
                 self.assertEqual(cli.main(["--config", str(path)]), 0)
-            google.assert_not_called()
             self.assertIsInstance(run.call_args.args[0], ical.Ical)
-
-
-class TestSetupIcal(unittest.TestCase):
-    def test_setup_writes_private_config_and_installs_venv_service(self):
-        from omarchy_calendar_sync import setup_ical
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "calendar-sync.json"
-            path.write_text(json.dumps({"calendars": {"include": ["old-google-id"]}}))
-            with patch.object(config, "CONFIG_PATH", path), \
-                 patch.object(Path, "home", return_value=Path(tmp)), \
-                 patch.object(setup_ical.getpass, "getpass", side_effect=[FEED["url"], ""]), \
-                 patch("builtins.input", side_effect=["Personal", ""]), \
-                 patch.object(cli, "main", return_value=0), \
-                 patch.object(setup_ical.subprocess, "run") as systemctl:
-                self.assertEqual(setup_ical.main(), 0)
-            cfg = config.load(path)
-            self.assertEqual(cfg["source"], "ical")
-            self.assertEqual(cfg["ical"]["feeds"][0]["url"], FEED["url"])
-            self.assertEqual(cfg["calendars"]["include"], [])
-            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
-            service = (Path(tmp) / ".config/systemd/user/omarchy-calendar-sync.service").read_text()
-            self.assertIn(setup_ical.sys.executable, service)
-            self.assertNotIn(FEED["url"], service)
-            self.assertEqual(systemctl.call_count, 2)

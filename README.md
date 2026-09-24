@@ -1,268 +1,149 @@
 # Calendar for Omarchy
 
-**Your Google Calendar, in your Omarchy bar.** A month view with your real
-events on it, and a bar that tells you what is coming before it starts.
-
-iCal subscription links work without Google OAuth; see
-[Connect with an iCal link](#connect-with-an-ical-link-no-google-oauth).
-It also reads a plain JSON file, so khal, vdirsyncer or other producers work
-just as well. See [Use another source](#use-another-source).
+**Your iCal calendars in the Omarchy bar.** A month view with real events and
+the next meeting announced directly in the clock label.
 
 ![Preview](preview.png)
 
-It replaces the built-in clock rather than sitting beside it, so you keep one
-icon. Left click opens a month calendar with your real events on it. When
-something is close, the bar itself stops being just a clock and tells you:
-
-![The bar announcing the next event](docs/images/bar.png)
-
-The clock stays. This widget takes the desktop clock's place, so trading the
-time away for an event title would be a downgrade you pay for all day.
-
 ## Features
 
-- Month grid with ISO week numbers, coloured dots per calendar
-- The selected day's agenda under the grid, click any day to see it
-- The next event today, with a live countdown, in the panel header
-- The bar label announces what is next, minutes before it starts
-- A **Join** button on meetings that have a video link, shown only from 15
-  minutes before the start until 15 minutes after the end
-- Clicking any event opens it in your calendar
-- Per-calendar visibility, week start, and countdown lead time in a settings page
-- Google's working-location markers hidden by default, declined invitations
-  struck through
-- Everything the built-in Omarchy clock does: label formats, right click to
-  cycle them, the year and life progress bars if you want them back
-- Theme aware, because it is a fork of the built-in clock
+- Month grid with ISO week numbers and coloured dots per calendar
+- Selected-day agenda and live next-event countdown
+- Join button for events with a video link
+- Per-calendar visibility and automatic calendar names from iCal metadata
+- Week start, declined-event and working-location display settings
+- The original Omarchy clock formats and optional year/life progress bars
+- HTTPS and `webcal://` subscriptions with recurring events, exceptions,
+  timezones and all-day events
 
-## Requirements
-
-Omarchy 4 with Quickshell. Google Calendar is optional, see
-[Use another source](#use-another-source).
+The plugin supports iCal subscriptions only. Calendars are added and removed
+from the settings panel; there is no Google CLI, OAuth setup or alternate
+source-management tool.
 
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/tmn73/omarchy-calendar.git --enable
+omarchy plugin add https://github.com/itcaat/omarchy-calendar.git --enable
 ```
 
-This widget **replaces** the built-in clock. In `~/.config/omarchy/shell.json`,
-remove the `omarchy.clock` entry from `bar.layout.center` and point
-`bar.centerAnchor` at `tmn73.calendar`:
+This widget replaces the built-in clock. In
+`~/.config/omarchy/shell.json`, remove `omarchy.clock` from
+`bar.layout.center` and configure:
 
 ```json
 {
   "bar": {
-    "centerAnchor": "tmn73.calendar",
+    "centerAnchor": "itcaat.calendar",
     "layout": {
       "center": [
-        { "id": "tmn73.calendar", "format": "dddd HH:mm" }
+        { "id": "itcaat.calendar", "format": "dddd HH:mm" }
       ]
     }
   }
 }
 ```
 
-Then:
+Then reload the shell:
 
 ```bash
 omarchy restart shell
 ```
 
-**Installing is not the whole job.** At this point you have a working clock and
-an empty calendar, because nothing is feeding it yet. Connect an iCal link or
-Google Calendar below, or point any other source at the file. The widget says as much when you
-open it, with the command to run.
+## Add calendars
 
-## Connect with an iCal Link (No Google OAuth)
+Open the calendar, click the gear, paste an HTTPS or `webcal://` subscription
+URL and click **Add calendar**. The first addition automatically creates the
+private Python environment, installs the iCal dependencies and enables the
+five-minute sync timer. Nothing needs to be run in a terminal first.
 
-For read-only calendars, subscribe with an HTTPS or `webcal://` iCalendar link:
+Before adding a calendar, choose one of the nine available calendar colors.
+The selected color is saved with the subscription and used for its event dots.
+
+The calendar name is read from `X-WR-CALNAME` or `NAME` in the feed. Its color
+is read from `X-APPLE-CALENDAR-COLOR` or `COLOR`. If either value is missing,
+the hostname or a default color is used. The settings panel also lets you hide
+or remove calendars.
+
+For Google Calendar, use **Settings > your calendar > Integrate calendar >
+Secret address in iCal format**. The same kind of subscription link works with
+other calendar providers.
+
+Private URLs are stored only in `~/.config/omarchy/calendar-sync.json`, with
+permissions `600`. They are never written to the events file or error output.
+
+## Local development
+
+To use a local checkout instead of a copied plugin, run:
 
 ```bash
-~/.config/omarchy/plugins/tmn73.calendar/sync/setup --ical
+make install
 ```
 
-In Google Calendar, open **Settings > your calendar > Integrate calendar >
-Secret address in iCal format**. Copy that address, not the public address.
-Your calendar does not need to be public. Workspace administrators may disable
-secret addresses. Other providers' iCalendar subscription links work too.
+The equivalent commands are:
 
-The terminal wizard asks for each link, name and color. A random color is
-suggested from a palette, avoiding colors already used until the palette is
-exhausted. Press Enter to accept it or type your own `#RRGGBB` color. The chosen
-color is saved and stays the same across syncs. Enter an empty link to
-finish. It installs the iCal dependencies in a dedicated Python virtual
-environment, verifies the first sync and enables the five-minute timer.
-Python with `venv`/`ensurepip` support is required; `gws`, `gcloud` and OAuth
-credentials are not. Running the wizard again keeps existing subscriptions
-and lets you add more.
+```bash
+omarchy plugin validate /home/itcat/Work/itcaat/omarchy-calendar
+mkdir -p ~/.config/omarchy/plugins
+ln -s /home/itcat/Work/itcaat/omarchy-calendar \
+  ~/.config/omarchy/plugins/itcaat.calendar
+omarchy-shell shell rescanPlugins
+omarchy plugin enable itcaat.calendar
+```
 
-Private links grant access to calendar contents. Input is hidden and the
-configuration file is saved with mode `600`. Links are not written to the
-widget's events file or error messages.
+This removes the current installation, validates the checkout, creates the
+local symlink, rescans plugins, waits until Omarchy discovers it and enables
+`itcaat.calendar`. This makes it safe to use while iterating on the plugin.
+The individual steps are also available as `make validate`, `make link`,
+`make rescan`, `make enable` and `make remove`.
 
-To rename, recolor or remove subscriptions, edit
-`~/.config/omarchy/calendar-sync.json`:
+Verify that local development is active with:
+
+```bash
+readlink ~/.config/omarchy/plugins/itcaat.calendar
+```
+
+It should print the path to this checkout, not a copied directory.
+
+If `itcaat.calendar` is already installed as a copied plugin, remove that copy
+first with `omarchy plugin remove itcaat.calendar --yes`. Changes in the local
+checkout are then picked up automatically; restart the shell if needed:
+
+```bash
+omarchy restart shell
+```
+
+## Configuration
+
+The sync configuration is maintained by the settings panel. It has this
+shape; feed names may be omitted because they are discovered automatically:
 
 ```json
 {
-  "source": "ical",
   "ical": {
     "feeds": [
       {
-        "id": "personal",
-        "name": "Personal",
+        "id": "ical-personal",
         "color": "#4285f4",
         "url": "https://example.com/private-calendar.ics"
       }
     ]
   },
-  "calendars": { "include": [], "exclude": [] },
   "window": { "pastDays": 7, "futureDays": 60 }
 }
 ```
 
-Keep each feed's `id` unique and stable. Changes apply on the next sync.
-To refresh immediately, run `systemctl --user start omarchy-calendar-sync.service`.
-Recurring events, exceptions, timezones and all-day events are supported.
-Floating times use `X-WR-TIMEZONE` when present, otherwise the desktop timezone.
-An invalid or unavailable feed leaves the previous events file intact.
-Provider caching can delay updates beyond the polling interval.
+Keep each feed ID unique and stable. The sync writes events atomically to
+`~/.local/state/omarchy/calendar-events.json`. An invalid or unavailable feed
+leaves the previous events file intact.
 
-Event links use the feed's `URL`; meeting links use `X-GOOGLE-CONFERENCE` when
-present. Google-specific working-location and personal invitation-response
-metadata are not mapped from iCal. The selected source is either iCal or the
-Google API, not both. Run setup without `--ical` to switch back to Google.
-
-## Sync your Google Calendar
-
-```bash
-~/.config/omarchy/plugins/tmn73.calendar/sync/setup
-```
-
-Run it in a real terminal. It pauses for input, and four steps have to be done
-by hand in the Google Cloud Console.
-
-**You need your own Google OAuth client.** There is no shared one, and that is
-not laziness. `calendar.readonly` is a Google *sensitive* scope, so a publicly
-distributed client would need Google verification and is capped at 100 users
-until it gets it. This is exactly why `gcalcli`'s shared token is currently
-restricted. Every user brings their own credentials.
-
-The script automates what has an API:
-
-- an isolated `gcloud` configuration, so your other projects are untouched
-- creating the Google Cloud project
-- enabling the Calendar API
-- installing the downloaded client secret, with the right permissions
-- the scoped login, and verifying the scope was actually granted
-- the systemd timer
-
-It stops and waits for the four things Google exposes no API for: the consent
-screen, declaring the calendar scope, publishing the app, and creating the
-Desktop OAuth client. Each one prints the exact URL and the exact values.
-
-Two of those steps are traps, and the script says so at the time:
-
-- **Declaring the scope under Data Access is not optional.** A scope that is
-  not declared there is never offered on the consent screen, so there is no box
-  to tick, Google silently grants only your email address, and every sync then
-  fails with `403 insufficient scopes` while the login reports success.
-- **Publish the app.** While it sits in Testing, Google expires refresh tokens
-  after seven days and your calendar quietly stops updating. Unverified
-  production apps show a one time warning screen and then work indefinitely.
-
-When it finishes, events land in `~/.local/state/omarchy/calendar-events.json`
-every five minutes and the widget picks them up without a restart.
-
-## Use another source
-
-The widget has no idea Google exists. It reads one file and renders it:
-
-```
-~/.local/state/omarchy/calendar-events.json
-```
-
-Anything that writes that file works: khal, vdirsyncer, Nextcloud, an ICS feed,
-a shell script, a cron job of your own. No credentials, no network, no `gws`.
-
-```json
-{
-  "version": 1,
-  "syncedAt": "2026-08-10T16:42:00+00:00",
-  "source": "whatever produced this",
-  "events": [
-    {
-      "id": "any-stable-id",
-      "calendarId": "work@example.com",
-      "calendarName": "Work",
-      "color": "#f83a22",
-      "dateKey": "2026-08-10",
-      "start": "2026-08-10T19:15:00-05:00",
-      "end": "2026-08-10T20:15:00-05:00",
-      "allDay": false,
-      "title": "Tax filing",
-      "location": ""
-    }
-  ]
-}
-```
-
-These four extra fields are optional. Omit them and everything still works:
+The event contract supports these optional fields:
 
 | Field | Effect |
 |---|---|
-| `meetingUrl` | Shows the **Join** button around the event's time. Must be `https`, anything else is dropped |
-| `eventUrl` | Clicking the row opens this. Must be `https` |
+| `meetingUrl` | Shows the **Join** button around the event time; HTTPS only |
+| `eventUrl` | Opens the event when its row is clicked; HTTPS only |
 | `eventType` | `workingLocation` is hidden by default, `outOfOffice` is labelled |
-| `responseStatus` | `declined` is struck through, and can be hidden entirely |
-
-Rules a writer has to follow:
-
-- `dateKey` is `YYYY-MM-DD` in local time, and it is what the grid keys on.
-- A multi-day event is emitted **once per day it covers**, each row with its own
-  `dateKey`. Those rows share an `id`, so the unique key for a row is
-  `id + dateKey`.
-- `allDay` events are excluded from the countdown, since counting down to
-  midnight tells you nothing.
-- Write the file atomically, temp file then rename. The widget watches it.
-- Unknown fields are ignored, so you can add your own.
-
-`tests/fixtures/calendar-events.json` is a valid two-event file to start from.
-
-## Settings
-
-Click the clock, then the gear icon in the panel header.
-
-![The settings page](docs/images/settings.png)
-
-| Section | What it does |
-|---|---|
-| Calendars | Show or hide each calendar. The list comes from your own events, so it needs no configuration |
-| Week starts on Monday | Off starts the week on Sunday |
-| Working location events | Google's work-from-home markers. Hidden by default because they are all-day rows describing no commitment |
-| Declined invitations | On lists them struck through, off hides them entirely |
-| Year and life progress | Brings back the built-in clock's bars, off by default |
-| Bar label | How early the bar announces what is next: never, 5, 15, 30 or 60 minutes |
-| Sync | Event count, source and last sync time, for diagnosing a quiet calendar |
-
-Hiding a calendar is instant and does not change what the sync fetches, so
-bringing one back does not wait for the next run.
-
-Sync behaviour lives in `~/.config/omarchy/calendar-sync.json`:
-
-```json
-{
-  "profile": "~/.config/gws-omarchy-calendar",
-  "gwsPath": "/absolute/path/to/gws",
-  "calendars": { "include": [], "exclude": [] },
-  "window": { "pastDays": 7, "futureDays": 60 }
-}
-```
-
-`include: []` means all of them. Names and ids both match. `gwsPath` has to be
-absolute: a systemd user service does not inherit your shell's `PATH`, so a
-`gws` installed by bun, cargo or pipx is invisible to it under its bare name.
+| `responseStatus` | `declined` is struck through or hidden by the setting |
 
 ## Troubleshooting
 
@@ -273,16 +154,10 @@ systemctl --user list-timers omarchy-calendar-sync.timer
 
 | Symptom | Cause |
 |---|---|
-| `403 insufficient scopes` | The calendar scope was never granted. Check `gws auth status`; if it only lists `openid` and `email`, declare the scope under Data Access in the console, then run `sync/setup` again |
-| `401 invalid_grant` | The refresh token expired. Almost always an app left in Testing, which caps refresh tokens at seven days. Publish it, then log in again |
-| `gws is not installed or not on PATH` from the timer, but it works in your terminal | `gwsPath` is not absolute. `sync/setup` writes it for you |
-| The panel says "No calendar synced yet" | The events file does not exist. The sync has never completed |
-| The panel says the calendar may be out of date | The file exists but `syncedAt` is old. Check the journal above |
-| An event shows up twice | Two of your calendars both carry it. Hide one in settings. The sync already drops exact duplicates by iCalUID and start time |
-| `The project ID you specified is already in use` during setup | Fixed in 0.1.1. Google Cloud project ids are unique across all of Google, and older versions hardcoded one. Update the plugin, or pass your own: `PROJECT_ID=something-unique sync/setup` |
-| Clicking an event opens your calendar but not the event | The link resolves only for the Google account the sync authenticated as. If your browser opens it in a profile signed into a different account, Google falls back to the calendar root. Route `google.com/calendar` to the profile holding that account |
-| The Join button never appears | It only shows from 15 minutes before the start until 15 minutes after the end, and only when the event has a video link |
-| Events are off by a day | Report it. Timezone handling resolves a named IANA zone precisely to avoid this, and there is a regression test for daylight saving transitions |
+| No calendars appear | Open Settings and add an HTTPS or `webcal://` subscription |
+| The panel says the calendar may be out of date | Check the sync journal above |
+| Events are off by a day | Check the feed timezone and report the feed format if it is valid |
+| The Join button never appears | It is shown only around the event time and for HTTPS meeting links |
 
 ## Uninstall
 
@@ -290,42 +165,11 @@ systemctl --user list-timers omarchy-calendar-sync.timer
 systemctl --user disable --now omarchy-calendar-sync.timer
 rm ~/.config/systemd/user/omarchy-calendar-sync.{service,timer}
 systemctl --user daemon-reload
-omarchy plugin remove tmn73.calendar
+omarchy plugin remove itcaat.calendar
 ```
 
-Then put `omarchy.clock` back in `shell.json` and `omarchy restart shell`.
-
-Your Google credentials live in the `gws` profile directory and are not touched
-by any of this. Delete that directory to revoke locally, and remove the project
-from your Google Cloud console to revoke properly.
-
-For iCal, subscriptions remain in `~/.config/omarchy/calendar-sync.json` and
-the Python environment remains in `${XDG_DATA_HOME:-~/.local/share}/omarchy-calendar/venv`.
-Remove these separately when no longer needed. Reset a private subscription
-link in your calendar provider's settings to revoke access through that link.
-
-## Development
-
-```bash
-cd sync && PYTHONPATH=. python3 -m unittest discover -s ../tests -t .. -v
-node --test tests/model.test.js
-```
-
-The Google sync uses only the Python standard library. For iCal and its tests:
-
-```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -r sync/requirements-ical.txt
-PYTHONPATH=sync .venv/bin/python -m unittest discover -s tests -t . -v
-```
-
-The QML logic lives in `Model.js`, which loads under Node for testing.
-
-`Panel.qml` and `BarWidget.qml` are not unit tested. Quickshell widgets need a
-live shell to render, and building that harness would cost more than it catches.
-Anything worth testing was deliberately pushed down into `Model.js`.
-
-## License
-
-MIT. Derived from Omarchy's built-in clock plugin, whose copyright notice is
-kept in `LICENSE`.
+For iCal, subscriptions remain in
+`~/.config/omarchy/calendar-sync.json`; remove that file if you also want to
+forget the feed URLs. The Python environment remains in
+`${XDG_DATA_HOME:-~/.local/share}/omarchy-calendar/venv` and can be removed
+separately.

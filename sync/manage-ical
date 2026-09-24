@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-calendar/venv"
+export PYTHONPATH="$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}"
+if [ -x "$VENV/bin/python" ]; then
+  exec "$VENV/bin/python" -m omarchy_calendar_sync.manage_ical "$@"
+fi
+exec python3 -m omarchy_calendar_sync.manage_ical "$@"

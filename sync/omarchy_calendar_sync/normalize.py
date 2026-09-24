@@ -1,4 +1,4 @@
-"""Turn Google Calendar event resources into contract rows.
+"""Turn normalized calendar event resources into contract rows.
 
 Pure functions only. No I/O, no subprocess, no clock reads. Everything this
 module needs is passed in, which is what makes the timezone behaviour
@@ -28,7 +28,7 @@ def _https_only(value):
 
 
 def _meeting_url(gevent):
-    """The video link for an event, preferring the one Google resolves itself."""
+    """The video link for an event, preferring a direct conference link."""
     direct = _https_only(gevent.get("hangoutLink"))
     if direct:
         return direct
@@ -45,8 +45,7 @@ def _meeting_url(gevent):
 def _response_status(gevent):
     """The user's own answer to the invitation, blank when not invited.
 
-    Google marks the user's own row in `attendees` with self: true. An event
-    the user created alone has no attendees at all.
+    Providers may mark the user's own row in `attendees` with self: true.
     """
     for attendee in gevent.get("attendees") or []:
         if attendee.get("self"):
@@ -55,7 +54,7 @@ def _response_status(gevent):
 
 
 def normalize_all(gevents, calendar, tz):
-    """Normalize a list of Google events, flattening the per-day rows."""
+    """Normalize a list of events, flattening the per-day rows."""
     rows = []
     for gevent in gevents:
         rows.extend(normalize_event(gevent, calendar, tz))
@@ -65,7 +64,7 @@ def normalize_all(gevents, calendar, tz):
 def normalize_event(gevent, calendar, tz):
     """Return one contract row per local day this event covers.
 
-    Rows produced from a single Google event share its id, so consumers must
+    Rows produced from a single event share its id, so consumers must
     key on id plus dateKey, never on id alone.
     """
     if gevent.get("status") == "cancelled":
@@ -84,7 +83,7 @@ def normalize_event(gevent, calendar, tz):
         return []
 
     if all_day:
-        # Google's all-day end.date must be strictly after start.date.
+        # An all-day end date must be strictly after the start date.
         if end_dt.date() <= start_dt.date():
             return []
     elif end_dt < start_dt:
@@ -123,7 +122,7 @@ def normalize_event(gevent, calendar, tz):
 
 
 def _parse_endpoint(node, tz):
-    """Return (aware datetime in tz, is_all_day) for a Google start/end node."""
+    """Return (aware datetime in tz, is_all_day) for a start/end node."""
     if "date" in node:
         parsed = date.fromisoformat(node["date"])
         return datetime(parsed.year, parsed.month, parsed.day, tzinfo=tz), True
@@ -141,7 +140,7 @@ def _covered_days(start_dt, end_dt, all_day):
     first = start_dt.date()
 
     if all_day:
-        # Google's all-day end.date is exclusive.
+        # An all-day end date is exclusive.
         last = end_dt.date() - timedelta(days=1)
     else:
         last = end_dt.date()

@@ -50,7 +50,7 @@ class TestValidate(unittest.TestCase):
 
 class TestBuildDocument(unittest.TestCase):
     def test_builds_a_valid_document(self):
-        doc = contract.build_document([], "2026-08-10T16:42:00+00:00", "gws/0.13.2")
+        doc = contract.build_document([], "2026-08-10T16:42:00+00:00", "ical")
         self.assertEqual(contract.validate(doc), [])
         self.assertEqual(doc["version"], contract.CONTRACT_VERSION)
 

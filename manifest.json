@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "tmn73.calendar",
+  "id": "itcaat.calendar",
   "name": "Calendar",
   "version": "0.2.1",
-  "author": "tmn73",
+  "author": "itcaat",
   "license": "MIT",
-  "description": "Your Google Calendar in the bar. Your next meeting at a glance, and one click to join it.",
+  "description": "Your iCal calendars in the bar. Your next meeting at a glance, and one click to join it.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Calendar",
-    "description": "Your Google Calendar in the bar. Your next meeting at a glance, and one click to join it.",
+    "description": "Your iCal calendars in the bar. Your next meeting at a glance, and one click to join it.",
     "category": "Time",
     "allowMultiple": false,
     "defaults": {

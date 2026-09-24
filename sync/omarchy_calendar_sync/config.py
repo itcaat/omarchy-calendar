@@ -14,14 +14,7 @@ from urllib.parse import urlsplit
 CONFIG_PATH = Path.home() / ".config" / "omarchy" / "calendar-sync.json"
 
 DEFAULTS = {
-    "source": "google",
     "ical": {"feeds": []},
-    "profile": str(Path.home() / ".config" / "gws-omarchy-calendar"),
-    # Resolved to an absolute path by sync/setup. A systemd user service
-    # does not inherit an interactive shell PATH, so relying on the bare
-    # name works from a terminal and fails from the timer.
-    "gwsPath": "gws",
-    "calendars": {"include": [], "exclude": []},
     "window": {"pastDays": 7, "futureDays": 60},
 }
 
@@ -47,9 +40,7 @@ def load(path=None):
 
     merged = _merge(copy.deepcopy(DEFAULTS), raw)
 
-    validate_source(merged)
-
-    _validate_calendars(merged.get("calendars"))
+    validate_ical(merged)
 
     window = merged.get("window")
     if isinstance(window, dict):
@@ -61,23 +52,21 @@ def load(path=None):
     return merged
 
 
-def validate_source(config):
-    if config.get("source") not in ("google", "ical"):
-        raise ConfigError("source must be google or ical")
-    if config["source"] != "ical":
-        return
+def validate_ical(config):
     settings = config.get("ical")
     feeds = settings.get("feeds") if isinstance(settings, dict) else None
-    if not isinstance(feeds, list) or not feeds:
-        raise ConfigError("ical.feeds must be a non-empty list")
+    if not isinstance(feeds, list):
+        raise ConfigError("ical.feeds must be a list")
     ids = set()
     for index, feed in enumerate(feeds, 1):
         label = f"iCal feed {index}"
         if not isinstance(feed, dict):
             raise ConfigError(f"{label} must be an object")
-        for key in ("id", "name", "url"):
+        for key in ("id", "url"):
             if not isinstance(feed.get(key), str) or not feed[key].strip():
                 raise ConfigError(f"{label} requires {key}")
+        if "name" in feed and (not isinstance(feed["name"], str) or not feed["name"].strip()):
+            raise ConfigError(f"{label} name must be a non-empty string when provided")
         try:
             url = urlsplit(feed["url"])
             valid = (url.scheme in ("https", "webcal") and url.hostname
@@ -111,16 +100,6 @@ def _merge(defaults, override):
     return merged
 
 
-def _validate_calendars(calendars):
-    """Reject a non-list include or exclude instead of silently misreading it."""
-    if not isinstance(calendars, dict):
-        return
-    for key in ("include", "exclude"):
-        value = calendars.get(key)
-        if value is not None and not isinstance(value, list):
-            raise ConfigError(f"calendars.{key} must be a list")
-
-
 def _coerce_days(value, key):
     """Turn a window day count into an int, or fail loudly naming the key."""
     if isinstance(value, bool):
@@ -133,23 +112,6 @@ def _coerce_days(value, key):
         except ValueError:
             raise ConfigError(f"{key} must be a number") from None
     raise ConfigError(f"{key} must be a number")
-
-
-def select_calendars(calendars, config):
-    """Apply the include and exclude lists. Exclude always wins."""
-    rules = config.get("calendars") or {}
-    include = set(rules.get("include") or [])
-    exclude = set(rules.get("exclude") or [])
-
-    selected = []
-    for calendar in calendars:
-        keys = {calendar["id"], calendar["name"]}
-        if keys & exclude:
-            continue
-        if include and not (keys & include):
-            continue
-        selected.append(calendar)
-    return selected
 
 
 def window_bounds(config, now):

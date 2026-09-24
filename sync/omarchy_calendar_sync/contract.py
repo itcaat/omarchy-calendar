@@ -44,14 +44,17 @@ _COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 _HTTPS_URL = re.compile(r"^https://[^\s\"'<>]+$")
 
 
-def build_document(events, synced_at, source):
+def build_document(events, synced_at, source, calendars=None):
     """Assemble a contract document from already normalized event rows."""
-    return {
+    document = {
         "version": CONTRACT_VERSION,
         "syncedAt": synced_at,
         "source": source,
         "events": events,
     }
+    if calendars is not None:
+        document["calendars"] = calendars
+    return document
 
 
 def validate(doc):

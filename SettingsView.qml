@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import qs.Commons
 import qs.Ui
 
@@ -23,11 +24,16 @@ Column {
   property int announceLeadMinutes: 15
 
   property string syncedAt: ""
-  property string sourceLabel: ""
   property int eventCount: 0
   property string syncState: "missing"
-  property string setupCommand: ""
-  property bool setupCommandCopied: false
+  property bool icalBusy: false
+  property string icalAction: "add"
+  property string icalMessage: ""
+  property var icalColors: [
+    "#4285f4", "#34a853", "#ea4335", "#fbbc04", "#a142f4",
+    "#24c1e0", "#f538a0", "#ff8c42", "#7cb342"
+  ]
+  property string selectedIcalColor: icalColors[Math.floor(Math.random() * icalColors.length)]
 
   signal calendarToggled(string calendarId)
   signal yearProgressToggled()
@@ -35,7 +41,8 @@ Column {
   signal workingLocationToggled()
   signal hideDeclinedToggled()
   signal leadMinutesPicked(int minutes)
-  signal setupCommandCopyRequested()
+  signal icalAddRequested(string url, string color)
+  signal icalRemoveRequested(string calendarId)
 
   readonly property color muted: Qt.darker(foreground, 1.5)
   readonly property color faint: Qt.darker(foreground, 1.9)
@@ -59,8 +66,12 @@ Column {
     property string hint: ""
     property bool checked: false
     property color swatch: "transparent"
+    property bool removable: false
+    property bool showCheck: true
+    readonly property bool hasSwatch: toggle.swatch.a > 0.001
 
     signal activated()
+    signal removeRequested()
 
     width: parent ? parent.width : 0
     height: toggleBody.height + Style.space(6)
@@ -72,27 +83,30 @@ Column {
     HoverHandler { id: hovered }
     TapHandler { onTapped: toggle.activated() }
 
-    Row {
+    Item {
       id: toggleBody
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.leftMargin: Style.space(3)
       anchors.rightMargin: Style.space(3)
       anchors.verticalCenter: parent.verticalCenter
-      spacing: Style.space(4)
+      height: toggleText.implicitHeight + (toggle.hint !== "" ? Style.space(15) : 0)
 
       Text {
+        id: toggleCheck
         anchors.verticalCenter: parent.verticalCenter
-        width: Style.space(14)
+        visible: toggle.showCheck
+        width: toggle.showCheck ? Style.space(14) : 0
         text: toggle.checked ? "✓" : ""
-        color: root.foreground
+        color: Qt.darker(root.foreground, 2.8)
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
       }
 
       Rectangle {
         anchors.verticalCenter: parent.verticalCenter
-        visible: toggle.swatch != "transparent"
+        x: Style.space(18)
+        visible: toggle.hasSwatch
         width: Style.space(4)
         height: width
         radius: width / 2
@@ -102,8 +116,14 @@ Column {
       }
 
       Column {
+        id: toggleText
         anchors.verticalCenter: parent.verticalCenter
-        width: toggleBody.width - Style.space(26)
+        anchors.left: parent.left
+        anchors.leftMargin: toggle.hasSwatch
+          ? Style.space(26)
+          : (toggle.showCheck ? Style.space(18) : 0)
+        anchors.right: parent.right
+        anchors.rightMargin: toggle.removable ? Style.space(30) : 0
         spacing: Style.space(1)
 
         Text {
@@ -123,6 +143,31 @@ Column {
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
           elide: Text.ElideRight
+        }
+      }
+
+      Rectangle {
+        visible: toggle.removable
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        width: Style.space(22)
+        height: width
+        radius: width / 2
+        color: removeHover.hovered
+          ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
+          : "transparent"
+
+        Text {
+          anchors.centerIn: parent
+          text: "×"
+          color: root.faint
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+        }
+
+        HoverHandler { id: removeHover }
+        TapHandler {
+          onTapped: toggle.removeRequested()
         }
       }
     }
@@ -151,8 +196,175 @@ Column {
       label: modelData.name
       swatch: modelData.color
       checked: root.hiddenCalendars.indexOf(modelData.id) === -1
+      removable: true
+      showCheck: false
       onActivated: root.calendarToggled(modelData.id)
+      onRemoveRequested: root.icalRemoveRequested(modelData.id)
     }
+  }
+
+  Text {
+    width: parent.width
+    text: qsTr("Add an iCal subscription")
+    color: root.muted
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.caption
+  }
+
+  Row {
+    id: icalInputRow
+    width: parent.width
+    spacing: Style.space(6)
+
+    TextField {
+      id: icalUrl
+      width: icalInputRow.width - colorPicker.width - icalInputRow.spacing
+      placeholderText: qsTr("https://… or webcal://…")
+      foreground: root.foreground
+      font.family: root.fontFamily
+      onAccepted: root.addIcal()
+    }
+
+    Rectangle {
+      id: colorPicker
+      width: Style.space(72)
+      height: icalUrl.height
+      z: colorMenu.visible ? 10 : 0
+      radius: Style.cornerRadius
+      color: colorPickerHover.containsMouse
+        ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.08)
+        : "transparent"
+      border.width: Style.spacing.hairline
+      border.color: root.muted
+
+      Rectangle {
+        anchors.left: parent.left
+        anchors.leftMargin: Style.space(7)
+        anchors.verticalCenter: parent.verticalCenter
+        width: Style.space(10)
+        height: width
+        radius: width / 2
+        color: root.selectedIcalColor
+      }
+
+      Text {
+        anchors.left: parent.left
+        anchors.leftMargin: Style.space(23)
+        anchors.verticalCenter: parent.verticalCenter
+        text: "▾"
+        color: root.faint
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+      }
+
+      MouseArea {
+        id: colorPickerHover
+        anchors.fill: parent
+        hoverEnabled: true
+        onClicked: colorMenu.visible ? colorMenu.close() : colorMenu.open()
+      }
+
+      Popup {
+        id: colorMenu
+        x: colorPicker.mapToItem(null, 0, colorPicker.height + Style.space(2)).x
+        y: colorPicker.mapToItem(null, 0, colorPicker.height + Style.space(2)).y
+        width: colorPicker.width
+        height: root.icalColors.length * Style.space(24) + Style.space(4)
+        padding: Style.space(2)
+        modal: true
+        dim: false
+        closePolicy: Popup.CloseOnPressOutside | Popup.CloseOnEscape
+
+        background: Rectangle {
+          color: Qt.darker(root.foreground, 2.8)
+          border.width: Style.spacing.hairline
+          border.color: root.muted
+        }
+
+        Column {
+          anchors.fill: parent
+
+          Repeater {
+            model: root.icalColors
+
+            Rectangle {
+              required property string modelData
+              width: colorMenu.availableWidth
+              height: Style.space(24)
+              color: colorMenuItemMouse.containsMouse
+                ? Qt.rgba(0, 0, 0, 0.12)
+                : "transparent"
+
+              Rectangle {
+                anchors.left: parent.left
+                anchors.leftMargin: Style.space(5)
+                anchors.verticalCenter: parent.verticalCenter
+                width: Style.space(10)
+                height: width
+                radius: width / 2
+                color: modelData
+              }
+
+              MouseArea {
+                id: colorMenuItemMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                onClicked: {
+                  root.selectedIcalColor = modelData
+                  colorMenu.close()
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  Rectangle {
+    width: addIcalLabel.width + Style.space(12)
+    height: addIcalLabel.height + Style.space(6)
+    radius: height / 2
+    color: addHover.hovered
+      ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.14)
+      : "transparent"
+    border.width: Style.spacing.hairline
+    border.color: root.muted
+
+    Text {
+      id: addIcalLabel
+      anchors.centerIn: parent
+      text: root.icalBusy
+        ? (root.icalAction === "remove" ? qsTr("Removing…") : qsTr("Adding…"))
+        : qsTr("Add calendar")
+      color: root.foreground
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+    }
+
+    HoverHandler { id: addHover }
+    TapHandler {
+      enabled: !root.icalBusy
+      onTapped: root.addIcal()
+    }
+  }
+
+  Text {
+    width: parent.width
+    visible: root.icalMessage !== ""
+    text: root.icalMessage
+    color: root.faint
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.caption
+    wrapMode: Text.WordWrap
+  }
+
+  function addIcal() {
+    var url = String(icalUrl.text).trim()
+    if (url === "") return
+    root.icalAddRequested(url, root.selectedIcalColor)
+    icalUrl.text = ""
+    root.selectedIcalColor = root.icalColors[Math.floor(Math.random() * root.icalColors.length)]
   }
 
   // ---- Display
@@ -168,7 +380,7 @@ Column {
 
   ToggleRow {
     label: qsTr("Working location events")
-    hint: qsTr("Google's work-from-home markers, hidden by default")
+    hint: qsTr("Work-from-home markers, hidden by default")
     checked: root.showWorkingLocation
     onActivated: root.workingLocationToggled()
   }
@@ -236,39 +448,22 @@ Column {
     }
   }
 
-  // ---- Sync status. Read-only on purpose: changing the Google account is an
-  //      OAuth browser flow, which belongs to sync/setup and not to a popup
-  //      in a status bar. What belongs here is knowing whether it is working.
+  // ---- Sync status
 
   SectionTitle { text: qsTr("SYNC") }
 
   Text {
     width: parent.width
-    color: root.syncState === "missing" && syncHover.hovered ? root.foreground : root.faint
+    color: root.faint
     font.family: root.fontFamily
     font.pixelSize: Style.font.caption
     wrapMode: Text.WordWrap
 
-    HoverHandler {
-      id: syncHover
-      enabled: root.syncState === "missing"
-      cursorShape: Qt.PointingHandCursor
-    }
-
-    TapHandler {
-      enabled: root.syncState === "missing"
-      onTapped: root.setupCommandCopyRequested()
-    }
-
     text: {
-      if (root.syncState === "missing") {
-        return root.setupCommandCopied
-          ? qsTr("Copied. Paste it in a terminal:\n%1").arg(root.setupCommand)
-          : qsTr("No calendar connected yet. Click to copy, then run:\n%1").arg(root.setupCommand)
-      }
+      if (root.syncState === "missing") return qsTr("No iCal calendars connected. Add one above.")
       if (root.syncState === "version") return qsTr("The events file was written by a newer version of this plugin.")
 
-      var line = root.eventCount + qsTr(" events from ") + root.sourceLabel
+      var line = root.eventCount + qsTr(" events from iCal")
       if (root.syncState === "stale") {
         return line + qsTr("\nLast sync looks old. Check: journalctl --user -u omarchy-calendar-sync")
       }
