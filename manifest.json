@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "itcaat.calendar",
-  "name": "Calendar",
+  "name": "Easy Calendar",
   "version": "0.2.1",
   "author": "itcaat",
   "license": "MIT",
@@ -13,7 +13,7 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Calendar",
+    "displayName": "Easy Calendar",
     "description": "Your iCal calendars in the bar. Your next meeting at a glance, and one click to join it.",
     "category": "Time",
     "allowMultiple": false,

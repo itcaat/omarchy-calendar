@@ -1,4 +1,4 @@
-# Calendar for Omarchy
+# Easy Calendar for Omarchy
 
 **Your iCal calendars in the Omarchy bar.** A month view with real events and
 the next meeting announced directly in the clock label.
